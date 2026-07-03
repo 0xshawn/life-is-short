@@ -106,6 +106,22 @@ unsupported_os_fails_before_root_check() {
     ! grep -q "Please run as root" <<<"$output"
 }
 
+has_main_entrypoint() {
+  grep -q '^main "\$@"$' "$ROOT_DIR/ubuntu_init.sh"
+}
+
+main_installs_tools_before_setting_editor() {
+  awk '
+    /^main\(\) \{/ { in_main = 1 }
+    in_main && /install_common_tools/ { install_line = NR }
+    in_main && /set_default_editor/ { editor_line = NR }
+    in_main && /^}/ { in_main = 0 }
+    END {
+      exit !(install_line > 0 && editor_line > 0 && install_line < editor_line)
+    }
+  ' "$ROOT_DIR/ubuntu_init.sh"
+}
+
 for script in "${SCRIPTS[@]}"; do
   check "$script is executable" test -x "$ROOT_DIR/$script"
   check "$script has valid bash syntax" bash -n "$ROOT_DIR/$script"
@@ -119,6 +135,8 @@ check "Ubuntu 22.04 is rejected before root check" unsupported_os_fails_before_r
 check "Debian 12 is rejected before root check" unsupported_os_fails_before_root_check "$DEBIAN_12_OS_RELEASE"
 check "Ubuntu 24.04 reaches root check" supported_os_reaches_root_check "$UBUNTU_24_04_OS_RELEASE"
 check "Ubuntu 24.10 reaches root check" supported_os_reaches_root_check "$UBUNTU_24_10_OS_RELEASE"
+check "ubuntu_init.sh has main entrypoint" has_main_entrypoint
+check "main installs tools before setting editor" main_installs_tools_before_setting_editor
 
 if [ "$failures" -ne 0 ]; then
   exit 1
