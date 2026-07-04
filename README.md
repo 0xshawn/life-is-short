@@ -23,3 +23,18 @@ curl -fsSL https://raw.githubusercontent.com/0xshawn/ops/main/ubuntu_init.sh | b
 ```
 
 List the available modules with `./ubuntu_init.sh --list` (or `--help`).
+
+## Modules
+
+| Module | Description |
+| --- | --- |
+| `install_common_tools` | Install common CLI tools (git, vim, curl, wget, htop, tmux, jq, build-essential, …) |
+| `set_default_editor` | Set Vim as the system default editor |
+| `configure_docker` | Write `/etc/docker/daemon.json` (data root `/data/docker`, JSON log limits) |
+| `install_docker` | Install Docker if missing, then enable and restart the service |
+| `configure_vim` | Write `/etc/vim/vimrc.local` with 4-space indentation defaults |
+| `configure_passwordless_sudo` | Grant the `sudo` group passwordless sudo |
+| `configure_journald` | Cap journald disk usage and retention, then restart it |
+| `configure_logrotate` | Enable compression and a max log size in logrotate |
+| `disable_apt_daily_timers` | Mask the `apt-daily` and `apt-daily-upgrade` services and timers |
+| `disable_welcome_message` | Create `~/.hushlogin` to silence the login banner |
