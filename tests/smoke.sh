@@ -116,8 +116,9 @@ user_config_targets_invoking_user() {
 }
 
 readme_uses_normal_user_remote_command() {
-  grep -q 'curl -fsSL https://raw.githubusercontent.com/0xshawn/life-is-short/main/ubuntu_init.sh | bash' "$ROOT_DIR/README.md" &&
-    ! grep -q 'sudo bash' "$ROOT_DIR/README.md"
+  grep -q 'curl -fsSL https://raw.githubusercontent.com/0xshawn/ops/main/ubuntu_init.sh | bash' "$ROOT_DIR/README.md" &&
+    ! grep -q 'sudo bash' "$ROOT_DIR/README.md" &&
+    ! grep -q '0xshawn/life-is-short' "$ROOT_DIR/README.md"
 }
 
 has_main_entrypoint() {
@@ -126,10 +127,10 @@ has_main_entrypoint() {
 
 main_installs_tools_before_setting_editor() {
   awk '
-    /^main\(\) \{/ { in_main = 1 }
-    in_main && /install_common_tools/ { install_line = NR }
-    in_main && /set_default_editor/ { editor_line = NR }
-    in_main && /^}/ { in_main = 0 }
+    /^readonly MODULE_ORDER=\(/ { in_list = 1 }
+    in_list && /install_common_tools/ { install_line = NR }
+    in_list && /set_default_editor/ { editor_line = NR }
+    in_list && /^\)/ { in_list = 0 }
     END {
       exit !(install_line > 0 && editor_line > 0 && install_line < editor_line)
     }

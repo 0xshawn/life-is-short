@@ -3,9 +3,12 @@
 set -euo pipefail
 
 # Usage:
-#   sudo ./ubuntu_init.sh
-#   ./ubuntu_init.sh
+#   sudo ./ubuntu_init.sh                       # run every module
+#   ./ubuntu_init.sh                            # run every module
+#   ./ubuntu_init.sh disable_welcome_message    # run only selected modules
+#   ./ubuntu_init.sh --list                     # list available modules
 #   curl -fsSL <url-to-this-script> | bash
+#   curl -fsSL <url-to-this-script> | bash -s -- disable_welcome_message
 
 readonly MIN_UBUNTU_MAJOR=24
 readonly MIN_UBUNTU_MINOR=4
@@ -267,7 +270,103 @@ disable_welcome_message() {
   fi
 }
 
+# Modules in execution order. Selecting a subset always runs in this order,
+# regardless of the order given on the command line.
+readonly MODULE_ORDER=(
+  install_common_tools
+  set_default_editor
+  configure_docker
+  install_docker
+  configure_vim
+  configure_passwordless_sudo
+  configure_journald
+  configure_logrotate
+  disable_apt_daily_timers
+  disable_welcome_message
+)
+
+# Human-readable step label for each module.
+declare -rA MODULE_DESCRIPTIONS=(
+  [install_common_tools]="Installing common tools"
+  [set_default_editor]="Setting default editor"
+  [configure_docker]="Configuring Docker"
+  [install_docker]="Installing Docker"
+  [configure_vim]="Configuring Vim"
+  [configure_passwordless_sudo]="Configuring passwordless sudo"
+  [configure_journald]="Configuring journald"
+  [configure_logrotate]="Configuring logrotate"
+  [disable_apt_daily_timers]="Disabling apt daily timers"
+  [disable_welcome_message]="Disabling welcome message"
+)
+
+is_known_module() {
+  local candidate="$1"
+  local module
+  for module in "${MODULE_ORDER[@]}"; do
+    [ "$module" = "$candidate" ] && return 0
+  done
+  return 1
+}
+
+list_modules() {
+  local module
+  for module in "${MODULE_ORDER[@]}"; do
+    printf '  %-28s %s\n' "$module" "${MODULE_DESCRIPTIONS[$module]}"
+  done
+}
+
+usage() {
+  cat <<EOF
+Usage: ubuntu_init.sh [options] [module ...]
+
+Run every module (default) or only the modules named on the command line.
+Selected modules always run in their canonical order.
+
+Options:
+  -l, --list   List available modules and exit
+  -h, --help   Show this help and exit
+
+Modules:
+$(list_modules)
+EOF
+}
+
+run_module() {
+  local module="$1"
+  log_step "${MODULE_DESCRIPTIONS[$module]}"
+  "$module"
+}
+
 main() {
+  local run_all=1
+  local -A selected=()
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      -l|--list)
+        list_modules
+        exit 0
+        ;;
+      all)
+        run_all=1
+        ;;
+      -*)
+        die "Unknown option: $1 (use --help for usage)"
+        ;;
+      *)
+        is_known_module "$1" ||
+          die "Unknown module: $1 (use --list to see available modules)"
+        selected["$1"]=1
+        run_all=0
+        ;;
+    esac
+    shift
+  done
+
   log_step "Checking operating system"
   require_supported_os
   log_step "Resolving target user"
@@ -275,26 +374,13 @@ main() {
   log_step "Checking sudo privileges"
   require_sudo
 
-  log_step "Installing common tools"
-  install_common_tools
-  log_step "Setting default editor"
-  set_default_editor
-  log_step "Configuring Docker"
-  configure_docker
-  log_step "Installing Docker"
-  install_docker
-  log_step "Configuring Vim"
-  configure_vim
-  log_step "Configuring passwordless sudo"
-  configure_passwordless_sudo
-  log_step "Configuring journald"
-  configure_journald
-  log_step "Configuring logrotate"
-  configure_logrotate
-  log_step "Disabling apt daily timers"
-  disable_apt_daily_timers
-  log_step "Disabling welcome message"
-  disable_welcome_message
+  local module
+  for module in "${MODULE_ORDER[@]}"; do
+    if [ "$run_all" -eq 1 ] || [ -n "${selected[$module]:-}" ]; then
+      run_module "$module"
+    fi
+  done
+
   log_step "Done."
 }
 
