@@ -29,6 +29,8 @@ List the available modules with `./ubuntu_init.sh --list` (or `--help`).
 | Module | Description |
 | --- | --- |
 | `install_common_tools` | Install common CLI tools (git, vim, curl, wget, htop, tmux, jq, build-essential, …) |
+| `initialize_zsh` | Set zsh as the target user's shell and install oh-my-zsh and fzf when zsh is available |
+| `install_node` | Install nvm and the latest Node.js LTS release |
 | `set_default_editor` | Set Vim as the system default editor |
 | `configure_docker` | Write `/etc/docker/daemon.json` (data root `/data/docker`, JSON log limits) |
 | `install_docker` | Install Docker if missing, then enable and restart the service |

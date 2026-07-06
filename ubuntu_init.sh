@@ -66,6 +66,22 @@ run_as_root() {
   fi
 }
 
+run_as_target_user() {
+  if [ "$TARGET_USER" = "$(id -un)" ]; then
+    HOME="$TARGET_HOME" "$@"
+    return
+  fi
+
+  if is_root; then
+    command -v runuser >/dev/null 2>&1 ||
+      die "This script requires runuser to switch to $TARGET_USER."
+    runuser -u "$TARGET_USER" -- env HOME="$TARGET_HOME" "$@"
+    return
+  fi
+
+  "$SUDO_BIN" -H -u "$TARGET_USER" env HOME="$TARGET_HOME" "$@"
+}
+
 write_root_file() {
   local path="$1"
   local mode="${2:-0644}"
@@ -186,6 +202,42 @@ install_common_tools() {
   run_as_root apt install -y "${packages[@]}"
 }
 
+initialize_zsh() {
+  local zsh_path
+
+  zsh_path="$(command -v zsh || true)"
+  if [ -z "$zsh_path" ]; then
+    log_step "zsh is not installed; skipping zsh initialization"
+    return
+  fi
+
+  run_as_root chsh -s "$zsh_path" "$TARGET_USER"
+  run_as_target_user zsh -lc '
+    set -euo pipefail
+
+    if [ ! -d "$HOME/.oh-my-zsh" ]; then
+      sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended --keep-zshrc
+    fi
+
+    if [ ! -d "$HOME/.fzf" ]; then
+      git clone --depth 1 https://github.com/junegunn/fzf.git "$HOME/.fzf"
+    fi
+
+    "$HOME/.fzf/install" --all
+  '
+}
+
+install_node() {
+  run_as_target_user bash -c '
+    set -euo pipefail
+    export NVM_DIR="$HOME/.nvm"
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.5/install.sh | bash
+    [ -s "$NVM_DIR/nvm.sh" ] || exit 1
+    . "$NVM_DIR/nvm.sh"
+    nvm install --lts
+  '
+}
+
 set_default_editor() {
   run_as_root update-alternatives --set editor /usr/bin/vim.basic
 }
@@ -274,6 +326,8 @@ disable_welcome_message() {
 # regardless of the order given on the command line.
 readonly MODULE_ORDER=(
   install_common_tools
+  initialize_zsh
+  install_node
   set_default_editor
   configure_docker
   install_docker
@@ -285,19 +339,23 @@ readonly MODULE_ORDER=(
   disable_welcome_message
 )
 
-# Human-readable step label for each module.
-declare -rA MODULE_DESCRIPTIONS=(
-  [install_common_tools]="Installing common tools"
-  [set_default_editor]="Setting default editor"
-  [configure_docker]="Configuring Docker"
-  [install_docker]="Installing Docker"
-  [configure_vim]="Configuring Vim"
-  [configure_passwordless_sudo]="Configuring passwordless sudo"
-  [configure_journald]="Configuring journald"
-  [configure_logrotate]="Configuring logrotate"
-  [disable_apt_daily_timers]="Disabling apt daily timers"
-  [disable_welcome_message]="Disabling welcome message"
-)
+module_description() {
+  case "$1" in
+    install_common_tools) printf '%s' "Installing common tools" ;;
+    initialize_zsh) printf '%s' "Initializing zsh" ;;
+    install_node) printf '%s' "Installing Node.js" ;;
+    set_default_editor) printf '%s' "Setting default editor" ;;
+    configure_docker) printf '%s' "Configuring Docker" ;;
+    install_docker) printf '%s' "Installing Docker" ;;
+    configure_vim) printf '%s' "Configuring Vim" ;;
+    configure_passwordless_sudo) printf '%s' "Configuring passwordless sudo" ;;
+    configure_journald) printf '%s' "Configuring journald" ;;
+    configure_logrotate) printf '%s' "Configuring logrotate" ;;
+    disable_apt_daily_timers) printf '%s' "Disabling apt daily timers" ;;
+    disable_welcome_message) printf '%s' "Disabling welcome message" ;;
+    *) die "Missing description for module: $1" ;;
+  esac
+}
 
 is_known_module() {
   local candidate="$1"
@@ -311,7 +369,7 @@ is_known_module() {
 list_modules() {
   local module
   for module in "${MODULE_ORDER[@]}"; do
-    printf '  %-28s %s\n' "$module" "${MODULE_DESCRIPTIONS[$module]}"
+    printf '  %-28s %s\n' "$module" "$(module_description "$module")"
   done
 }
 
@@ -333,13 +391,23 @@ EOF
 
 run_module() {
   local module="$1"
-  log_step "${MODULE_DESCRIPTIONS[$module]}"
+  log_step "$(module_description "$module")"
   "$module"
+}
+
+is_selected_module() {
+  local candidate="$1"
+  local selected_modules="$2"
+
+  case " $selected_modules " in
+    *" $candidate "*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 main() {
   local run_all=1
-  local -A selected=()
+  local selected_modules=""
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -360,7 +428,7 @@ main() {
       *)
         is_known_module "$1" ||
           die "Unknown module: $1 (use --list to see available modules)"
-        selected["$1"]=1
+        selected_modules="$selected_modules $1"
         run_all=0
         ;;
     esac
@@ -376,7 +444,7 @@ main() {
 
   local module
   for module in "${MODULE_ORDER[@]}"; do
-    if [ "$run_all" -eq 1 ] || [ -n "${selected[$module]:-}" ]; then
+    if [ "$run_all" -eq 1 ] || is_selected_module "$module" "$selected_modules"; then
       run_module "$module"
     fi
   done
